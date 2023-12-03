@@ -8,18 +8,19 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import torch.optim as optim
 import numpy as np
-def preprocess_data(file_path, time_step=100, test_size=0.2):
+def preprocess_data(file_path, time_step=100, test_size=0.2, num_records=6000):
     data = pd.read_csv(file_path)
-    selected_features = ['Close', 'Volume']
+    selected_features = ['Close']
     data = data[selected_features]
     data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
-    data['Volume'] = pd.to_numeric(data['Volume'], errors='coerce')
     data.dropna(inplace=True)
 
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_data = scaler.fit_transform(data)
 
     X, y = create_dataset(scaled_data, time_step)
+    X = X[:num_records]
+    y = y[:num_records]
 
     X_torch = torch.from_numpy(X).float().permute(0, 2, 1)
     y_torch = torch.from_numpy(y).float()
@@ -29,7 +30,7 @@ def preprocess_data(file_path, time_step=100, test_size=0.2):
     train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
     test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=64)
 
-    return train_loader, test_loader, y_train, y_test
+    return train_loader, test_loader, scaler, y_train, y_test  
 
 def evaluate_model(model, test_loader, criterion, y_test):
     model.eval()
@@ -46,6 +47,11 @@ def evaluate_model(model, test_loader, criterion, y_test):
     error_percentage = (rmse / avg_close_price) * 100
 
     return rmse, avg_close_price, error_percentage
+
+def inverse_transform(scaler, data):
+    data = np.array(data).reshape(-1, 1)
+    return scaler.inverse_transform(data)
+
 # Function to create windowed dataset
 def create_dataset(dataset, time_step=100):
     X, y = [], []
@@ -60,7 +66,7 @@ time_step = 100
 class StockPriceCNN(nn.Module):
     def __init__(self):
         super(StockPriceCNN, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=2, out_channels=64, kernel_size=2)
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=64, kernel_size=2)
         self.relu = nn.ReLU()
         self.maxpool = nn.MaxPool1d(kernel_size=2)
         self.flatten = nn.Flatten()
@@ -84,17 +90,25 @@ model = StockPriceCNN()
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+# Get predictions and actual prices
+def get_predictions(model, test_loader):
+    model.eval()
+    predictions = []
+    actuals = []
+    with torch.no_grad():
+        for inputs, labels in test_loader:
+            outputs = model(inputs)
+            predictions.extend(outputs.view(-1).tolist())
+            actuals.extend(labels.tolist())
+    return predictions, actuals
+x_axis = np.arange(time_step, time_step + 6000)
 # Iterate through each file
 for file_path in file_paths:
     # Preprocess the data
-    train_loader, test_loader, y_train, y_test = preprocess_data(file_path)
-
+    train_loader, test_loader, scaler, y_train, y_test = preprocess_data(file_path)
 
     # Train the model
-    # Define training parameters
     epochs = 100
-
-    # Training loop
     for epoch in range(epochs):
         model.train()  # Set the model to training mode
         for inputs, labels in train_loader:
@@ -110,5 +124,24 @@ for file_path in file_paths:
 
         print(f'Epoch {epoch+1}/{epochs}, Loss: {loss.item()}')
 
+    # Evaluate the model
     rmse, avg_close_price, error_percentage = evaluate_model(model, test_loader, criterion, y_test)
     print(f"File: {file_path}, RMSE: {rmse}, Average Close Price: {avg_close_price}, Error Percentage: {error_percentage}%")
+
+    # Get predictions and actual prices
+    predictions, actuals = get_predictions(model, test_loader)
+    # Invert the scaling of predictions and actuals to get actual prices
+    actuals = actuals[:6000]  # Ensure we only take the first 1200 actual records
+    predictions = inverse_transform(scaler, predictions)
+    actuals = inverse_transform(scaler, actuals[:6000])
+    
+    # Plotting
+    plt.figure(figsize=(10, 6))
+    plt.plot(actuals, label='Real Prices', color='blue')
+    plt.plot(predictions, label='Predicted Prices', color='red')
+    plt.title('Real vs Predicted Prices (First 1200 Records)')
+    plt.xlabel('Trading Minutes')
+    plt.ylabel('Price')
+    plt.xlim(x_axis[0], x_axis[-1])
+    plt.legend()
+    plt.show()
