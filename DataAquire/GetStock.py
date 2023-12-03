@@ -43,7 +43,7 @@ def getMinuteWise():
     
         print(stock_name)
 
-        save_dir = 'StockData/TimeWise'
+        save_dir = 'StockData/MinuteWise'
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)  # Create the directory if it doesn't exist
 
@@ -64,7 +64,7 @@ def getMinuteWise():
 
 
 
-def getAllStock():
+def getDayWise():
     start_date = '2014-07-01' 
     end_date = '2015-06-02'
         #open the file
@@ -80,7 +80,7 @@ def getAllStock():
     
     print(stock_name)
 
-    save_dir = 'StockData'
+    save_dir = 'StockData/DayWise'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)  # Create the directory if it doesn't exist
 
@@ -96,7 +96,7 @@ def getAllStock():
         stock_data.to_csv(csv_filepath)
         
 
-getMinuteWise()
+getDayWise()
 
 
 
