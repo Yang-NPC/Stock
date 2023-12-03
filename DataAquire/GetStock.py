@@ -22,7 +22,7 @@ for i in range(len(stock_name)):
     
 print(stock_name)
 
-save_dir = 'DataAquire/StockData'
+save_dir = 'StockData'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)  # Create the directory if it doesn't exist
 
