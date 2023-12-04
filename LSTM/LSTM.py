@@ -97,12 +97,3 @@ avg_close_price = y_test.mean().item()
 error_percentage = (rmse / avg_close_price) * 100
 
 print(f'RMSE: {rmse}, Average Close Price: {avg_close_price}, Error Percentage: {error_percentage}%')
-
-plt.figure(figsize=(12, 6))
-plt.plot(results_df['Actual Price'], label='Actual Price')
-plt.plot(results_df['Predicted Price'], label='Predicted Price', alpha=0.7)
-plt.title('Stock Price Prediction')
-plt.xlabel('Time')
-plt.ylabel('Stock Price')
-plt.legend()
-plt.show()
