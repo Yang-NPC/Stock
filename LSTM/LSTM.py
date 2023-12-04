@@ -73,9 +73,8 @@ for epoch in range(epochs):
 
         loss.backward()
         optimizer.step()
-
-    if i % 25 == 1:
-         print(f'Epoch {epoch:3}, Loss: {loss.item():10.8f}')
+        
+        print(f'Epoch {epoch:3}, Loss: {loss.item():10.8f}')
 
 model.eval()
 predictions = []
