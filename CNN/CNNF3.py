@@ -83,7 +83,7 @@ class StockPriceCNN(nn.Module):
 
 model = StockPriceCNN()
 
-file_paths = ['Stock\DataAquire\StockData\MinuteWise\INFY.NS.csv', 'Stock\DataAquire\StockData\MinuteWise\TCS.NS.csv', 'Stock\DataAquire\StockData\MinuteWise\CIPLA.NS.csv']
+file_paths = ['Stock\DataAquire\StockData\MinuteWise\CIPLA.NS.csv', 'Stock\DataAquire\StockData\MinuteWise\TCS.NS.csv', 'Stock\DataAquire\StockData\MinuteWise\CIPLA.NS.csv']
 
 # Initialize the model
 model = StockPriceCNN()
@@ -101,7 +101,7 @@ def get_predictions(model, test_loader):
             predictions.extend(outputs.view(-1).tolist())
             actuals.extend(labels.tolist())
     return predictions, actuals
-x_axis = np.arange(time_step, time_step + 6000)
+x_axis = np.arange(time_step, time_step + 1400)
 # Iterate through each file
 for file_path in file_paths:
     # Preprocess the data
@@ -128,20 +128,33 @@ for file_path in file_paths:
     rmse, avg_close_price, error_percentage = evaluate_model(model, test_loader, criterion, y_test)
     print(f"File: {file_path}, RMSE: {rmse}, Average Close Price: {avg_close_price}, Error Percentage: {error_percentage}%")
 
-    # Get predictions and actual prices
-    predictions, actuals = get_predictions(model, test_loader)
-    # Invert the scaling of predictions and actuals to get actual prices
-    actuals = actuals[:6000]  # Ensure we only take the first 1200 actual records
-    predictions = inverse_transform(scaler, predictions)
-    actuals = inverse_transform(scaler, actuals[:6000])
-    
+
+    # Evaluate the CNN model
+    model.eval()
+    cnn_predictions = []
+    cnn_actuals = []
+
+    with torch.no_grad():
+        for seq, labels in test_loader:
+            y_test_pred = model(seq)
+            cnn_predictions.extend(y_test_pred.numpy().flatten().tolist())
+            cnn_actuals.extend(labels.numpy().flatten().tolist())
+
+    # Process output for plotting
+    cnn_actual_prices = scaler.inverse_transform(np.array(cnn_actuals).reshape(-1, 1))
+    cnn_predicted_prices = scaler.inverse_transform(np.array(cnn_predictions).reshape(-1, 1))
+
+    min_length = min(len(cnn_actual_prices), len(cnn_predicted_prices))
+    cnn_actual_prices = cnn_actual_prices[:min_length]
+    cnn_predicted_prices = cnn_predicted_prices[:min_length]
+
     # Plotting
-    plt.figure(figsize=(10, 6))
-    plt.plot(actuals, label='Real Prices', color='blue')
-    plt.plot(predictions, label='Predicted Prices', color='red')
-    plt.title('Real vs Predicted Prices (First 1200 Records)')
-    plt.xlabel('Trading Minutes')
-    plt.ylabel('Price')
-    plt.xlim(x_axis[0], x_axis[-1])
+    plt.figure(figsize=(12, 6))
+    plt.plot(cnn_actual_prices, label='Actual Price')
+    plt.plot(cnn_predicted_prices, label='Predicted Price', alpha=0.7)
+    plt.title('CNN Stock Price Prediction')
+    plt.xlabel('Time')
+    plt.ylabel('Stock Price')
+    plt.ylim(1260, 1560)  # Set the y-axis range
     plt.legend()
     plt.show()

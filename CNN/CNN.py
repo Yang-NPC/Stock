@@ -1,127 +1,116 @@
-from matplotlib import pyplot as plt
 import torch
 import torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
+import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-import torch.optim as optim
-import numpy as np
+from torch.utils.data import DataLoader, TensorDataset
+import matplotlib.pyplot as plt
 
-# Re-loading the dataset as the previous session state was reset
+# Load and preprocess data
 file_path = 'Stock\DataAquire\StockData\MinuteWise\CIPLA.NS.csv'
 data = pd.read_csv(file_path)
-
-# Selecting only the 'Close' (price) and 'Volume' columns
-selected_features = ['Close', 'Volume']
-data = data[selected_features]
-
-# Convert columns to float
+data = data[:-1]
 data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
-data['Volume'] = pd.to_numeric(data['Volume'], errors='coerce')
+data = data.dropna(subset=['Close'])
+close_prices = data['Close'].values.reshape(-1, 1)
 
-# Drop rows with NaN values (if any)
-data.dropna(inplace=True)
-
-# Normalize the features
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data)
+normalized_prices = scaler.fit_transform(close_prices)
+features_tensor = torch.FloatTensor(normalized_prices)
 
-# Function to create windowed dataset
-def create_dataset(dataset, time_step=100):
-    X, y = [], []
-    for i in range(len(dataset) - time_step - 1):
-        a = dataset[i:(i + time_step), :]
-        X.append(a)
-        y.append(dataset[i + time_step, 0])  # Target is 'Close' price
-    return np.array(X), np.array(y)
+# Function to create sequences
+def create_inout_sequences(input_data, tw):
+    inout_seq = []
+    L = len(input_data)
+    for i in range(L-tw):
+        train_seq = input_data[i:i+tw]
+        train_label = input_data[i+tw:i+tw+1]
+        inout_seq.append((train_seq, train_label))
+    return inout_seq
 
-time_step = 100
-X, y = create_dataset(scaled_data, time_step)
+seq_length = 3
+train_size = int(len(features_tensor) * 0.8)
 
-# Display the first few rows of the preprocessed data
-data.head(), X.shape, y.shape
+train_data = features_tensor[:train_size]
+test_data = features_tensor[train_size:]
 
-# Normalize the features
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data)
+train_sequences = create_inout_sequences(train_data, seq_length)
+test_sequences = create_inout_sequences(test_data, seq_length)
 
-# Create windowed dataset
-X, y = create_dataset(scaled_data, time_step=100)
+train_loader = DataLoader(train_sequences, batch_size=3, shuffle=True)
+test_loader = DataLoader(test_sequences, batch_size=3, shuffle=False)
 
-# Convert to PyTorch tensors and permute
-X_torch = torch.from_numpy(X).float().permute(0, 2, 1)
-y_torch = torch.from_numpy(y).float()
+# CNN model definition
+class CNN(nn.Module):
+    def __init__(self, input_size=1, num_filters=32, filter_size=2, output_size=1):
+        super(CNN, self).__init__()
+        self.conv1 = nn.Conv1d(in_channels=input_size, out_channels=num_filters, kernel_size=filter_size)
+        self.fc1 = nn.Linear(num_filters * (seq_length - filter_size + 1), output_size)
 
-# Splitting the dataset into train and test sets
-X_train, X_test, y_train, y_test = train_test_split(X_torch, y_torch, test_size=0.2, random_state=42)
+    def forward(self, input_seq):
+        # input_seq shape: (batch_size, seq_length, input_size)
+        # transpose to (batch_size, input_size, seq_length) for Conv1d
+        conv_out = self.conv1(input_seq.transpose(1, 2))
+        # Make the tensor contiguous before calling view
+        flattened = conv_out.contiguous().view(conv_out.size(0), -1)
+        predictions = self.fc1(flattened)
+        return predictions
 
-# Create DataLoader
-train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
-test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=64)
+model = CNN()
 
-class StockPriceCNN(nn.Module):
-    def __init__(self):
-        super(StockPriceCNN, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=2, out_channels=64, kernel_size=2)
-        self.relu = nn.ReLU()
-        self.maxpool = nn.MaxPool1d(kernel_size=2)
-        self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(64 * ((time_step - 1) // 2), 50)
-        self.fc2 = nn.Linear(50, 1)
-
-    def forward(self, x):
-        x = self.relu(self.conv1(x))
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
-
-model = StockPriceCNN()
-
-# Loss function and optimizer
+# Training the model
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+epochs = 150
 
-# Training loop
-epochs = 100
-for epoch in range(epochs):
-    model.train()
-    for inputs, labels in train_loader:
-        # Zero the parameter gradients
+for i in range(epochs):
+    for seq, labels in train_loader:
         optimizer.zero_grad()
-
-        # Forward pass
-        outputs = model(inputs)
-        loss = criterion(outputs, labels.unsqueeze(1))
-
-        # Backward pass and optimize
-        loss.backward()
+        y_pred = model(seq)
+        single_loss = criterion(y_pred.view(-1), labels.view(-1))
+        single_loss.backward()
         optimizer.step()
 
-    print(f'Epoch {epoch+1}/{epochs}, Loss: {loss.item()}')
+    if i % 25 == 1:
+        print(f'epoch: {i:3} loss: {single_loss.item():10.8f}')
 
-# Evaluate the model on the test dataset
+# Evaluating the model
 model.eval()
-test_loss = 0
+predictions = []
+actuals = []
+
 with torch.no_grad():
-    for inputs, labels in test_loader:
-        outputs = model(inputs)
-        loss = criterion(outputs, labels.unsqueeze(1))
-        test_loss += loss.item()
+    for seq, labels in test_loader:
+        y_test_pred = model(seq)
+        predictions.extend(y_test_pred.numpy().flatten().tolist())  # Flatten and to list
+        actuals.extend(labels.numpy().flatten().tolist())  # Flatten and to list
 
-# Calculate the average loss (MSE) on the test dataset
-avg_test_loss = test_loss / len(test_loader)
+actual_prices = scaler.inverse_transform(np.array(actuals).reshape(-1, 1))
+predicted_prices = scaler.inverse_transform(np.array(predictions).reshape(-1, 1))
 
-# Calculate RMSE
-rmse = np.sqrt(avg_test_loss)
+min_length = min(len(actual_prices), len(predicted_prices))
+actual_prices = actual_prices[:min_length]
+predicted_prices = predicted_prices[:min_length]
 
-# Calculate the average 'Close' price in the test dataset for error percentage
-avg_close_price = y_test.mean().item()
+# Create a DataFrame
+results_df = pd.DataFrame({
+    'Actual Price': np.squeeze(actual_prices),
+    'Predicted Price': np.squeeze(predicted_prices)
+})
 
-# Calculate Error Percentage
-error_percentage = (rmse / avg_close_price) * 100
+# Calculate percentage error for each prediction
+percentage_errors = np.abs((actual_prices - predicted_prices) / actual_prices) * 100
 
-print(f'RMSE: {rmse}, Average Close Price: {avg_close_price}, Error Percentage: {error_percentage}%')
+# Now you can display the average percentage error over the test set
+average_percentage_error = np.mean(percentage_errors)
+print(f"Average Percentage Error: {average_percentage_error:.2f}%")
+
+# Plotting
+plt.figure(figsize=(12, 6))
+plt.plot(results_df['Actual Price'], label='Actual Price')
+plt.plot(results_df['Predicted Price'], label='Predicted Price', alpha=0.7)
+plt.title('Stock Price Prediction with CNN')
+plt.xlabel('Time')
+plt.ylabel('Stock Price')
+plt.legend()
+plt.show()
