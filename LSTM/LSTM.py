@@ -8,52 +8,47 @@ import pandas as pd
 import torch.optim as optim
 import numpy as np
 
-file_path = 'Stock\DataAquire\StockData\MinuteWise\CIPLA.NS.csv'
+file_path = 'Stock\DataAquire\StockData\MinuteWise\INFY.NS.csv'
 data = pd.read_csv(file_path)
-
-selected_features = ['Close', 'Volume']
-data = data[selected_features]
+data = data[:-1]
 
 data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
-data['Volume'] = pd.to_numeric(data['Volume'], errors='coerce')
-
-data.dropna(inplace=True)
-
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data)
-
-def create_dataset(dataset, time_step=100):
-    X, y = [], []
-    for i in range(len(dataset) - time_step - 1):
-        a = dataset[i:(i + time_step), :]
-        X.append(a)
-        y.append(dataset[i + time_step, 0])
-    return np.array(X), np.array(y)
-
-time_step = 100
-X, y = create_dataset(scaled_data, time_step)
-
-data.head(), X.shape, y.shape
+data = data.dropna(subset=['Close'])
+close_prices = data['Close'].values.reshape(-1, 1)
 
 scaler = MinMaxScaler(feature_range=(0, 1))
 scaled_data = scaler.fit_transform(data)
+features_tensor = torch.FloatTensor(normalized_prices)
 
-X, y = create_dataset(scaled_data, time_step=100)
+def create_dataset(data, length):
+    seq = []
+    L = len(data)
+    for i in range(L-length):
+        train_seq = data[i:i+length]
+        train_label = data[i+length:i+length+1]
+        seq.append((train_seq, train_label))
+    return seq
 
-X_torch = torch.from_numpy(X).float().permute(0, 2, 1)
-y_torch = torch.from_numpy(y).float()
+seq_length = 3
+train_size = int(len(features_tensor) * 0.8)
 
-X_train, X_test, y_train, y_test = train_test_split(X_torch, y_torch, test_size=0.2, random_state=42)
+train_data = features_tensor[:train_size]
+test_data = features_tensor[train_size:]
 
-train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
-test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=64)
+train_sequences = create_dataset(train_data, seq_length)
+test_sequences = create_dataset(test_data, seq_length)
+
+train_loader = DataLoader(train_sequences, batch_size=3, shuffle=True)
+test_loader = DataLoader(train_sequences, batch_size=3, shuffle=False)
+print(len(test_loader))
 
 class StockPriceLSTM(nn.Module):
-    def __init__(self, input_size=2, hidden_size=64, num_layers=2):
+    def __init__(self, input_size=3, hidden_size=100, num_layers=1):
         super(StockPriceLSTM, self).__init__()
+        self.hidden_layer_size = hidden_size
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.relu = nn.ReLU()
-        self.fc1 = nn.Linear(hidden_size, 1)
+        self.linear = nn.Linear(hidden_size, num_layers)
+        self.hidden_cell = torch.zeros(1, 1, self.hidden_layer_size)
 
     def forward(self, x):
         out, _ = self.lstm(x)
@@ -64,36 +59,57 @@ class StockPriceLSTM(nn.Module):
 model = StockPriceLSTM()
 
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 epochs = 100
 for epoch in range(epochs):
     model.train()
     for inputs, labels in train_loader:
         optimizer.zero_grad()
+        model.hidden_cell = torch.zeros(1, 1, model.hidden_layer_size)
 
         outputs = model(inputs)
-        loss = criterion(outputs, labels.unsqueeze(1))
+        loss = criterion(outputs, labels.view(-1))
 
         loss.backward()
         optimizer.step()
 
-    print(f'Epoch {epoch+1}/{epochs}, Loss: {loss.item()}')
+    if i % 25 == 1:
+         print(f'Epoch {epoch:3}, Loss: {loss.item():10.8f}')
 
 model.eval()
-test_loss = 0
+predictions = []
+actuals = []
+
 with torch.no_grad():
     for inputs, labels in test_loader:
         outputs = model(inputs)
-        loss = criterion(outputs, labels.unsqueeze(1))
-        test_loss += loss.item()
+        predictions.extend(y_test_pred.numpy().flatten().tolist())
+        actuals.extend(labels.numpy().flatten().tolist())
 
-avg_test_loss = test_loss / len(test_loader)
+actual_prices = scaler.inverse_transform(np.array(actuals).reshape(-1, 1))
+predicted_prices = scaler.inverse_transform(np.array(predictions).reshape(-1, 1))
 
-rmse = np.sqrt(avg_test_loss)
+min_length = min(len(actual_prices), len(predicted_prices))
+actual_prices = actual_prices[:min_length]
+predicted_prices = predicted_prices[:min_length]
 
-avg_close_price = y_test.mean().item()
+results_df = pd.DataFrame({
+    'Actual Price': np.squeeze(actual_prices),
+    'Predicted Price': np.squeeze(predicted_prices)
+})
 
-error_percentage = (rmse / avg_close_price) * 100
+percentage_errors = np.abs((actual_prices - predicted_prices) / actual_prices) * 100
 
-print(f'RMSE: {rmse}, Average Close Price: {avg_close_price}, Error Percentage: {error_percentage}%')
+average_percentage_error = np.mean(percentage_errors)
+print(f"Average Percentage Error: {average_percentage_error:.2f}%")
+
+
+plt.figure(figsize=(12, 6))
+plt.plot(results_df['Actual Price'], label='Actual Price')
+plt.plot(results_df['Predicted Price'], label='Predicted Price', alpha=0.7)
+plt.title('Stock Price Prediction')
+plt.xlabel('Time')
+plt.ylabel('Stock Price')
+plt.legend()
+plt.show()
