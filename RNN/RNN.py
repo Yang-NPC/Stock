@@ -17,6 +17,9 @@ data = data.dropna(subset=['Close'])
 close_prices = data['Close'].values.reshape(-1, 1)
 
 scaler = MinMaxScaler(feature_range=(0, 1))
+
+scaler.data_min_ = np.array([2000])
+scaler.data_max_ = np.array([4000])
 normalized_prices = scaler.fit_transform(close_prices)
 features_tensor = torch.FloatTensor(normalized_prices)
 
@@ -64,7 +67,7 @@ model = RNN()
 # Training the model
 criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-epochs = 150
+epochs = 100
 
 for i in range(epochs):
     for seq, labels in train_loader:
@@ -89,9 +92,13 @@ model.eval()
 predictions = []
 actuals = []
 
+test_loss = 0
 with torch.no_grad():
     for seq, labels in test_loader:
         y_test_pred = model(seq)
+        outputs = model(seq)
+        loss = criterion(outputs, labels.unsqueeze(1))
+        test_loss += loss.item()
         predictions.extend(y_test_pred.numpy().flatten().tolist())  # Flatten and to list
         actuals.extend(labels.numpy().flatten().tolist())  # Flatten and to list
 
@@ -101,6 +108,7 @@ predicted_prices = scaler.inverse_transform(np.array(predictions).reshape(-1, 1)
 min_length = min(len(actual_prices), len(predicted_prices))
 actual_prices = actual_prices[:min_length]
 predicted_prices = predicted_prices[:min_length]
+
 
 # Create a DataFrame
 results_df = pd.DataFrame({
@@ -116,6 +124,19 @@ percentage_errors = np.abs((actual_prices - predicted_prices) / actual_prices) *
 average_percentage_error = np.mean(percentage_errors)
 print(f"Average Percentage Error: {average_percentage_error:.2f}%")
 
+# Calculate the average loss (MSE) on the test dataset
+avg_test_loss = test_loss / len(test_loader)
+
+# Calculate RMSE
+rmse = np.sqrt(avg_test_loss)
+
+# Calculate the average 'Close' price in the test dataset for error percentage
+avg_close_price = test_data.mean().item()
+
+# Calculate Error Percentage
+error_percentage = (rmse / avg_close_price) * 100
+
+print(f'RMSE: {rmse}, Average Close Price: {avg_close_price}, Error Percentage: {error_percentage}%')
 
 plt.figure(figsize=(12, 6))
 plt.plot(results_df['Actual Price'], label='Actual Price')
