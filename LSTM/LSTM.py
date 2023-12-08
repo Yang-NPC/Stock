@@ -53,7 +53,6 @@ class LSTM(nn.Module):
         super(LSTM, self).__init__()
         self.hidden_layer_size = hidden_layer_size
 
-        # Use an LSTM layer instead of RNN
         self.lstm = nn.LSTM(input_size, hidden_layer_size)
 
         # The linear layer that maps from hidden state space to output space
@@ -126,7 +125,6 @@ results_df = pd.DataFrame({
 percentage_errors = np.abs((actual_prices - predicted_prices) / actual_prices) * 100
 
 
-# Now you can display the average percentage error over the test set
 average_percentage_error = np.mean(percentage_errors)
 print(f"Average Percentage Error: {average_percentage_error:.2f}%")
 

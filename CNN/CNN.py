@@ -48,8 +48,7 @@ class CNN(nn.Module):
         self.fc1 = nn.Linear(num_filters * (seq_length - filter_size + 1), output_size)
 
     def forward(self, input_seq):
-        # input_seq shape: (batch_size, seq_length, input_size)
-        # transpose to (batch_size, input_size, seq_length) for Conv1d
+       
         conv_out = self.conv1(input_seq.transpose(1, 2))
         # Make the tensor contiguous before calling view
         flattened = conv_out.contiguous().view(conv_out.size(0), -1)

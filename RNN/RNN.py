@@ -75,8 +75,7 @@ for i in range(epochs):
         optimizer.zero_grad()
         model.hidden_cell = torch.zeros(1, 1, model.hidden_layer_size)
 
-        # Correctly reshape the sequence
-        #seq = seq.view(seq_length, -1, 1)
+
 
         y_pred = model(seq)
 
@@ -119,8 +118,6 @@ results_df = pd.DataFrame({
 
 # Calculate percentage error for each prediction
 percentage_errors = np.abs((actual_prices - predicted_prices) / actual_prices) * 100
-
-
 
 # Calculate the average loss (MSE) on the test dataset
 avg_test_loss = test_loss / len(test_loader)
