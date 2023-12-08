@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 
 # Load and preprocess data
-file_path = 'Stock\DataAquire\StockData\MinuteWise\CIPLA.NS.csv'
+file_path = '../DataAquire/StockData/MinuteWise/INFY.NS.csv'
 data = pd.read_csv(file_path)
 data = data[:-1]
 data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
@@ -28,7 +28,7 @@ def create_inout_sequences(input_data, tw):
         inout_seq.append((train_seq, train_label))
     return inout_seq
 
-seq_length = 3
+seq_length = 1
 train_size = int(len(features_tensor) * 0.8)
 
 train_data = features_tensor[:train_size]
@@ -37,12 +37,12 @@ test_data = features_tensor[train_size:]
 train_sequences = create_inout_sequences(train_data, seq_length)
 test_sequences = create_inout_sequences(test_data, seq_length)
 
-train_loader = DataLoader(train_sequences, batch_size=3, shuffle=True)
-test_loader = DataLoader(test_sequences, batch_size=3, shuffle=False)
+train_loader = DataLoader(train_sequences, batch_size=1, shuffle=True)
+test_loader = DataLoader(test_sequences, batch_size=1, shuffle=False)
 
 # CNN model definition
 class CNN(nn.Module):
-    def __init__(self, input_size=1, num_filters=32, filter_size=2, output_size=1):
+    def __init__(self, input_size=1, num_filters=32, filter_size=1, output_size=1):
         super(CNN, self).__init__()
         self.conv1 = nn.Conv1d(in_channels=input_size, out_channels=num_filters, kernel_size=filter_size)
         self.fc1 = nn.Linear(num_filters * (seq_length - filter_size + 1), output_size)
@@ -61,7 +61,7 @@ model = CNN()
 # Training the model
 criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-epochs = 150
+epochs = 100
 
 for i in range(epochs):
     for seq, labels in train_loader:
@@ -79,11 +79,17 @@ model.eval()
 predictions = []
 actuals = []
 
+test_loss = 0
 with torch.no_grad():
     for seq, labels in test_loader:
         y_test_pred = model(seq)
+
+        loss = criterion(y_test_pred, labels.unsqueeze(1))
+        test_loss += loss.item()
         predictions.extend(y_test_pred.numpy().flatten().tolist())  # Flatten and to list
         actuals.extend(labels.numpy().flatten().tolist())  # Flatten and to list
+
+        
 
 actual_prices = scaler.inverse_transform(np.array(actuals).reshape(-1, 1))
 predicted_prices = scaler.inverse_transform(np.array(predictions).reshape(-1, 1))
@@ -101,9 +107,22 @@ results_df = pd.DataFrame({
 # Calculate percentage error for each prediction
 percentage_errors = np.abs((actual_prices - predicted_prices) / actual_prices) * 100
 
-# Now you can display the average percentage error over the test set
-average_percentage_error = np.mean(percentage_errors)
-print(f"Average Percentage Error: {average_percentage_error:.2f}%")
+
+
+
+# Calculate the average loss (MSE) on the test dataset
+avg_test_loss = test_loss / len(test_loader)
+
+# Calculate RMSE
+rmse = np.sqrt(avg_test_loss)
+
+# Calculate the average 'Close' price in the test dataset for error percentage
+avg_close_price = test_data.mean().item()
+
+# Calculate Error Percentage
+error_percentage = (rmse / avg_close_price) * 100
+
+print(f'RMSE: {rmse}, Average Close Price: {avg_close_price}, Error Percentage: {error_percentage}%')
 
 # Plotting
 plt.figure(figsize=(12, 6))

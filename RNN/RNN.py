@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 
 
+
 # Load and preprocess data
 file_path = '../DataAquire/StockData/MinuteWise/TCS.NS.csv'
 data = pd.read_csv(file_path)
@@ -33,7 +34,7 @@ def create_inout_sequences(input_data, tw):
         inout_seq.append((train_seq, train_label))
     return inout_seq
 
-seq_length = 3
+seq_length = 1
 train_size = int(len(features_tensor) * 0.8)
 
 train_data = features_tensor[:train_size]
@@ -44,13 +45,13 @@ train_sequences = create_inout_sequences(train_data, seq_length)
 test_sequences = create_inout_sequences(test_data, seq_length)
 
 
-train_loader = DataLoader(train_sequences, batch_size=3, shuffle=True)
-test_loader = DataLoader(test_sequences, batch_size=3, shuffle=False)
+train_loader = DataLoader(train_sequences, batch_size=1, shuffle=True)
+test_loader = DataLoader(test_sequences, batch_size=1, shuffle=False)
 print(len(test_loader))
 
 # RNN model definition
 class RNN(nn.Module):
-    def __init__(self, input_size=3, hidden_layer_size=100, output_size=1):
+    def __init__(self, input_size=1, hidden_layer_size=100, output_size=1):
         super(RNN, self).__init__()
         self.hidden_layer_size = hidden_layer_size
         self.rnn = nn.RNN(input_size, hidden_layer_size)
@@ -120,9 +121,6 @@ results_df = pd.DataFrame({
 percentage_errors = np.abs((actual_prices - predicted_prices) / actual_prices) * 100
 
 
-# Now you can display the average percentage error over the test set
-average_percentage_error = np.mean(percentage_errors)
-print(f"Average Percentage Error: {average_percentage_error:.2f}%")
 
 # Calculate the average loss (MSE) on the test dataset
 avg_test_loss = test_loss / len(test_loader)
